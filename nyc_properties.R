@@ -1,5 +1,4 @@
-
-setwd("C:\\Users\\Owner\\Capstone")
+#setwd("C:\\Users\\Owner\\Capstone")
 
 if(!require(data.table)) install.packages("data.table")
 if(!require(tidyr)) install.packages("tidyr")
@@ -34,6 +33,14 @@ library(randomForest)
 #The NYC Property Sales Data has 84548 observations and 22 variables. It has property sales data 
 #of each of the 5 boroughs in NYC - Manhattan, the Bronx, Queens, Brookyln and Staten Island.
 
+
+# dl <- tempfile()
+# download.file("https://github.com/vleung5/NYCPropertySales/raw/master/nyc-property-sales.zip", dl)
+# nyc_prop <- as_data_frame(read.csv(unzip(dl,"nyc-rolling-sales.csv")))
+# unlink(dl)
+
+download.file("https://github.com/vleung5/NYCPropertySales/raw/master/nyc-property-sales.zip", destfile="nyc-property-sales.zip")
+unzip("nyc-property-sales.zip","nyc-rolling-sales.csv")
 nyc_prop <- as_data_frame(fread("nyc-rolling-sales.csv"))
 class(nyc_prop)
 #[1] "tbl_df"     "tbl"        "data.frame"
@@ -82,7 +89,6 @@ names(nyc_property)
 head(nyc_property)
 
 # Data Type conversions to the Data set
-#fac <- c(1,2,3,4,5,8,11,18,19)
 fac <- c(1,2,3,4,5,8,11,18,19)
 nyc_property <- nyc_property %>% mutate_at(fac, funs(factor(.)))
 levels(nyc_property$BOROUGH) <- c("Manhattan", "Bronx", "Brooklyn", "Queens", "Staten Island")
@@ -148,10 +154,10 @@ nyc_property <- subset(nyc_property, select = -c(which(names(nyc_property) %in% 
 
 
 #filter out outliers for sale price
- boxplot(nyc_property$'SALE PRICE')
- outliers = boxplot(nyc_property$'SALE PRICE', plot=FALSE)$out
- nyc_property[nyc_property$'SALE PRICE' %in% outliers,]
- nyc_property <- nyc_property %>% filter(nyc_property$'SALE PRICE' %in% outliers )
+boxplot(nyc_property$'SALE PRICE')
+outliers = boxplot(nyc_property$'SALE PRICE', plot=FALSE)$out
+nyc_property[nyc_property$'SALE PRICE' %in% outliers,]
+nyc_property <- nyc_property %>% filter(nyc_property$'SALE PRICE' %in% outliers )
 
 
 #Do a log transformation on this
@@ -214,12 +220,10 @@ nyc_property.train %>%
   cor() %>%
   corrplot::corrplot()
 
-#It looks like year built and building age doesn't have good correlations.
-
 
 nyc_property.train %>% 
-  select('BOROUGH', 'NEIGHBORHOOD','RESIDENTIAL UNITS','COMMERCIAL UNITS','TOTAL UNITS', 
-         'LAND SQUARE FEET','GROSS SQUARE FEET', 'BUILDING AGE') %>% 
+  dplyr::select(`BOROUGH`, `NEIGHBORHOOD`,`RESIDENTIAL UNITS`,`COMMERCIAL UNITS`,`TOTAL UNITS`, 
+         `LAND SQUARE FEET`,`GROSS SQUARE FEET`, `BUILDING AGE`) %>% 
   gather(metric, value) %>% 
   ggplot(aes(value, fill = metric)) + 
   geom_density(show.legend = FALSE) + 
@@ -240,202 +244,73 @@ lapply(nyc_property.train, class)
 # Error in model.frame.default(Terms, newdata, na.action = na.action, xlev = object$xlevels) : 
 #   factor NEIGHBORHOOD has new levels ARROCHAR, BULLS HEAD, CONCORD, GRANT CITY, MARINERS HARBOR, MORRIS PARK/VAN NEST, SOUTH BEACH, SOUTH OZONE PARK, WOODLAWN
 
-#neighorhood in test but not in train?
+#Let's verify if there are neighorhoods in test but not in train.  We will put them in the training set.
 nyc_property.train %>% filter(`NEIGHBORHOOD` == "ARROCHAR") #0 row
 nyc_property.test %>% filter(`NEIGHBORHOOD` == "ARROCHAR") #1 row
 
-missing_data <- nyc_property.test %>% 
-  anti_join(nyc_property.train, by = "NEIGHBORHOOD")
+nyc_property.temp <- nyc_property.test
 
-nyc_property.train <- rbind(nyc_property.train, missing_data)
+nyc_property.test <- nyc_property.temp %>% 
+  semi_join(nyc_property.train, by = "NEIGHBORHOOD") %>%
+  semi_join(nyc_property.train, by = "BUILDING CLASS CATEGORY NUMBER") %>%
+  semi_join(nyc_property.train, by = "BLOCK") %>%
+  semi_join(nyc_property.train, by = "LOT") %>%
+  semi_join(nyc_property.train, by = "BUILDING CLASS CATEGORY") %>%
+  semi_join(nyc_property.train, by = "ZIP CODE") %>%
+  semi_join(nyc_property.train, by = "BUILDING CLASS AT TIME OF SALE")
 
-#same with building class category number
-# Error in model.frame.default(Terms, newdata, na.action = na.action, xlev = object$xlevels) : 
-#   factor BUILDING CLASS CATEGORY NUMBER has new levels 05 , 06 
-missing_data <- nyc_property.test %>% 
-  anti_join(nyc_property.train, by = "BUILDING CLASS CATEGORY NUMBER")
-nyc_property.train <- rbind(nyc_property.train, missing_data)
+removed <- anti_join(nyc_property.temp, nyc_property.test)
+nyc_property.train <- rbind(nyc_property.train, removed)
 
-missing_data <- nyc_property.test %>% 
-  anti_join(nyc_property.train, by = "BLOCK")
-nyc_property.train <- rbind(nyc_property.train, missing_data)
-
-missing_data <- nyc_property.test %>% 
-  anti_join(nyc_property.train, by = "LOT")
-nyc_property.train <- rbind(nyc_property.train, missing_data)
-
-missing_data <- nyc_property.test %>% 
-  anti_join(nyc_property.train, by = "BUILDING CLASS CATEGORY")
-nyc_property.train <- rbind(nyc_property.train, missing_data)
-
-missing_data <- nyc_property.test %>% 
-  anti_join(nyc_property.train, by = "ZIP CODE")
-nyc_property.train <- rbind(nyc_property.train, missing_data)
-
-missing_data <- nyc_property.test %>% 
-  anti_join(nyc_property.train, by = "BUILDING CLASS AT TIME OF SALE")
-nyc_property.train <- rbind(nyc_property.train, missing_data)
+rm(nyc_property.temp, removed)
 
 
-Sys.time()
-# "2019-05-17 07:50:15 EDT"
-# 
 
-# m <- lm(nyc_property.train$'SALE PRICE' ~ nyc_property.train$'BOROUGH' +
-#                        nyc_property.train$'NEIGHBORHOOD' +
-#                        nyc_property.train$'BUILDING CLASS CATEGORY NUMBER' +
-#                        nyc_property.train$'BUILDING CLASS CATEGORY' +
-#                        nyc_property.train$'TAX CLASS AT PRESENT'+
-#                        #block, lot
-#                        nyc_property.train$'BLOCK'+
-#                        nyc_property.train$'LOT'+
-#                        nyc_property.train$'BUILDING CLASS AT PRESENT' +
-#                        nyc_property.train$'ZIP CODE' +
-#                        #residential units, commercial units
-#                        nyc_property.train$'COMMERCIAL UNITS' +
-#                        nyc_property.train$'RESIDENTIAL UNITS' +
-#                        nyc_property.train$'TOTAL UNITS' +
-#                        nyc_property.train$'LAND SQUARE FEET' +
-#                        nyc_property.train$'GROSS SQUARE FEET' +
-#                        nyc_property.train$'BUILDING AGE' +
-#                        nyc_property.train$'TAX CLASS AT TIME OF SALE' +
-#                        nyc_property.train$'BUILDING CLASS AT TIME OF SALE' +
-#                        #SALE PRICE
-#                        nyc_property.train$'SALE YEAR' +
-#                        nyc_property.train$'SALE MONTH', data = nyc_property.train)
-# 
-# m <- lm(`SALE PRICE` ~ `BOROUGH` +
-#           `NEIGHBORHOOD` +
-#           `BUILDING CLASS CATEGORY NUMBER` +
-#           `BUILDING CLASS CATEGORY` +
-#           `TAX CLASS AT PRESENT`+
-#           #block, lot
-#           `BLOCK`+
-#           `LOT`+
-#           `BUILDING CLASS AT PRESENT` +
-#           `ZIP CODE` +
-#           #residential units, commercial units
-#           `COMMERCIAL UNITS` +
-#           `RESIDENTIAL UNITS` +
-#           `TOTAL UNITS` +
-#           `LAND SQUARE FEET` +
-#           `GROSS SQUARE FEET` +
-#           `BUILDING AGE` +
-#           `TAX CLASS AT TIME OF SALE` +
-#           `BUILDING CLASS AT TIME OF SALE` +
-#           #SALE PRICE
-#           `SALE YEAR` +
-#           `SALE MONTH`, data = nyc_property.train)
-
-names(nyc_property.train)
 m <- lm(nyc_property.train$'SALE PRICE' ~ . - `SALE PRICE`, data = nyc_property.train)
 
-
-Sys.time()
-#"2019-05-17 07:51:46 ED"T
 
 predict_model_lm_m <- predict(m, nyc_property.test)
 # Warning message:
 #   In predict.lm(m, nyc_property.test) :
 #   prediction from a rank-deficient fit may be misleading
 length(m$coefficients) > m$rank
-#this means there are collinear covariates, maybe total units?
-# library(Matrix)
-# cat(rankMatrix(nyc_property.train), "\n")
-# cat(rankMatrix(nyc_property.test), "\n")
-# install.packages("car")
-# library(car)
-# vif(lm(nyc_property.train$'SALE PRICE' ~ . - `SALE PRICE`, data = nyc_property.train))
-# alias( lm(nyc_property.train$'SALE PRICE' ~ . - `SALE PRICE`, data = nyc_property.train) )
-# Error in vif.default(lm(nyc_property.train$"SALE PRICE" ~ . - `SALE PRICE`,  : 
-#                           there are aliased coefficients in the model
-
+#This means there are collinear covariates. Using summary, we see that there are NAs for Estimate, Std. Error and t value.
+#The warning may or may not be important but it's probably benign.  But we can do another LM model without these fields and compare results.
+summary(m)
 
 model_1_rmse_m <- RMSE(predict_model_lm_m, nyc_property.test$'SALE PRICE')
 model_1_rmse_m
-
 
 rmse_results <- data_frame(method = "LM", RMSE = model_1_rmse_m)
 rmse_results %>% knitr::kable()
 
 
 
+#LM removed fields
+
+m <- lm(`SALE PRICE` ~ . - `NEIGHBORHOOD` - `BUILDING CLASS CATEGORY NUMBER` - `BUILDING CLASS CATEGORY` - `TAX CLASS AT PRESENT` -
+          `BLOCK` - `BUILDING CLASS AT PRESENT` - `ZIP CODE` - `TAX CLASS AT TIME OF SALE` - `SALE PRICE`
+          `BUILDING CLASS AT TIME OF SALE` - `SALE MONTH`
+        
+        , data = nyc_property.train)
+
+predict_model_lm_m <- predict(m, nyc_property.test)
+
+
+model_1_rmse_m <- RMSE(predict_model_lm_m, nyc_property.test$'SALE PRICE')
+model_1_rmse_m
+
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="LM with selected columns",  
+                                     RMSE = model_1_rmse_m ))
+rmse_results %>% knitr::kable()
+
+
+
 #GBM Gradient Boosting Machine
-control <- trainControl(method="cv", number = 5, p = 0.8)
-grid <- expand.grid(minNode = c(1) , predFixed = c(10, 15, 35))
 
-names(nyc_property.train)
-lapply(nyc_property.train, class)
-
-Sys.time()
-# train_gbm <-  train(nyc_property.train[,c(1,2,12,13,14,15,16,17,23,24)], nyc_property.train$'SALE PRICE',
-#                     method = "gbm",
-#                     trControl = control)
-
-# train_gbm <-  train(nyc_property.train$'SALE PRICE' ~ . ,nyc_property.train,
-#                     method = "gbm",
-#                     trControl = control)
-# Error in `contrasts<-`(`*tmp*`, value = contr.funs[1 + isOF[nn]]) : 
-#   contrasts can be applied only to factors with 2 or more levels
-
-# train_gbm <-  train(nyc_property.train[,c(1,2,12,13,14,15,16,17,23,24)], nyc_property.train$'SALE PRICE',
-#                                         method = "gbm",
-#                                         trControl = control)
-
-Sys.time()
-#Setting row names on a tibble is deprecated.
-#if moving from data.frame to data.table, there will be no more warnings.
-
-# ggplot(train_gbm)
-# #RMSE goes down when max tree depth is at 2
-# Sys.time()
-# predictions_gbm_model1 <- predict(train_gbm, nyc_property.test)
-# gbm_model_1_rmse <-RMSE(predictions_gbm_model1, nyc_property.test$'SALE PRICE')
-# gbm_model_1_rmse
-# #0.8787105
-# Sys.time()
-# 
-# rmse_results <- bind_rows(rmse_results,
-#                           data_frame(method="GBM model 1",  
-#                                      RMSE = gbm_model_1_rmse ))
-# rmse_results %>% knitr::kable()
-
-
-lapply(nyc_property.train, class)
-
-#try this way:
-gbm.fit <- gbm(
-  formula = `SALE PRICE` ~ `BOROUGH` +
-    `NEIGHBORHOOD` +
-    `BUILDING CLASS CATEGORY NUMBER` +
-    `BUILDING CLASS CATEGORY` +
-    `TAX CLASS AT PRESENT`+
-    #block, lot
-    #`BLOCK`+
-    #`LOT`+
-    `BUILDING CLASS AT PRESENT` +
-    `ZIP CODE` +
-    #residential units, commercial units
-    `COMMERCIAL UNITS` +
-    `RESIDENTIAL UNITS` +
-    `TOTAL UNITS` +
-    `LAND SQUARE FEET` +
-    `GROSS SQUARE FEET` +
-    `BUILDING AGE` +
-    `TAX CLASS AT TIME OF SALE` +
-    `BUILDING CLASS AT TIME OF SALE` +
-    #SALE PRICE
-    `SALE YEAR` +
-    `SALE MONTH`, 
-  distribution = "gaussian",
-  data = nyc_property.train,
-  n.trees = 1000,
-  interaction.depth = 1,
-  shrinkage = 0.001,
-  cv.folds = 5,
-  n.cores = NULL, # will use all cores by default
-  verbose = FALSE
-)
+#clean up global data/variables before running this as it will run out of memory.
+rm(m, model_1_rmse_m, predict_model_lm_m, outliers, nzv, fac, index, nyc_prop)
 
 #This doesnt work because it only accept variables in numeric, ordered or factor (not characters)
 # gbm.fit <- gbm(
@@ -452,7 +327,17 @@ gbm.fit <- gbm(
 # Error in checkForRemoteErrors(val) : 
 #   5 nodes produced errors; first error: variable 6: BLOCK is not of type numeric, ordered, or factor.
 
-Sys.time()
+gbm.fit <- gbm(
+  formula = `SALE PRICE` ~ . - `BLOCK` - `LOT` - `SALE PRICE`, 
+  distribution = "gaussian",
+  data = nyc_property.train,
+  n.trees = 1000,
+  interaction.depth = 1,
+  shrinkage = 0.001,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+)
 
 gbm.fit
 #The best cross-validation iteration was 7407
@@ -460,33 +345,17 @@ gbm.fit
 # get MSE and compute RMSE
 gbm_model_rmse <- sqrt(min(gbm.fit$cv.error))
 gbm_model_rmse
-#[1] 0.2496879
-Sys.time()
+
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method="GBM model",  
                                      RMSE = gbm_model_rmse ))
 rmse_results %>% knitr::kable()
 
+rm(gbm.fit, gbm_model_rmse)
 
+#Let's try random forest 
 
-#Let's try random forest again
-names(nyc_property.train)
-lapply(nyc_property.train, class)
-# 
-# rs <- Rborist(nyc_property.train[,col_index], nyc_property.train$`SALE PRICE`)
-
-#check level of borough in both test and train
-
-X = nyc_property.train[,names(nyc_property.train)!="SALE PRICE"]
-y = nyc_property.train$"SALE PRICE"
-dim(X)
-dim(y)
-class(y)
-names(nyc_property.train)
-rf_model <- randomForest(X,y)
-# Error in randomForest.default(X, y) : 
-#   Can not handle categorical predictors with more than 53 categories.
-
+#Random forest have issues with the spaces in column names as they are illegal. 
 #make illegal variable names to legal names.
 nyc_property.train_new <- nyc_property.train
 names(nyc_property.train_new) <- make.names(names(nyc_property.train_new))
@@ -494,6 +363,8 @@ names(nyc_property.train_new) <- make.names(names(nyc_property.train_new))
 nyc_property.test_new <- nyc_property.test
 names(nyc_property.test_new) <- make.names(names(nyc_property.test_new))
 
+#Random Forest also have issues with factors with more than 53 categories.  Let's identify them and exclude them.
+#Error: Can not handle categorical predictors with more than 53 categories.
 names(Filter(is.factor, nyc_property.train_new))
 length(unique(nyc_property.train_new$BOROUGH))
 length(unique(nyc_property.train_new$NEIGHBORHOOD))
@@ -507,60 +378,27 @@ length(unique(nyc_property.train_new$BUILDING.CLASS.AT.TIME.OF.SALE))
 length(unique(nyc_property.train_new$SALE.YEAR))
 length(unique(nyc_property.train_new$SALE.MONTH))
 
-rf_model <- randomForest(`SALE.PRICE` ~ 
-                                                                              `BOROUGH`+
-                                                                            #`NEIGHBORHOOD`, #no good
-                                                                            `BUILDING.CLASS.CATEGORY.NUMBER` +
-                                                                            `BUILDING.CLASS.CATEGORY` +
-                                                                            `TAX.CLASS.AT.PRESENT`+
-                                                                            `BLOCK`+
-                                                                            `LOT`+
-                                                                            #nyc_property.train$'BUILDING CLASS AT PRESENT' + #no good
-                                                                            #nyc_property.train$'ZIP CODE' + #no sgood
-                                                                            `COMMERCIAL.UNITS` +
-                                                                            `RESIDENTIAL.UNITS` +
-                                                                            `TOTAL.UNITS` +
-                                                                            `LAND.SQUARE.FEET` +
-                                                                            `GROSS.SQUARE.FEET` +
-                                                                            `BUILDING.AGE` +
-                                                                            `TAX.CLASS.AT.TIME.OF.SALE` +
-                                                                            #nyc_property.train$'BUILDING CLASS AT TIME OF SALE' + #no good
-                                                                            `SALE.YEAR`+
-                                                                            `SALE.MONTH`,
-                                                                            data=nyc_property.train_new, 
-                                                                            importance=TRUE, na.action=na.omit)
-# # Error in randomForest.default(m, y, ...) : 
-# #   Can not handle categorical predictors with more than 53 categories.
-# # removing those fields
-# 
-# Error in eval(predvars, data, env) : object 'SALE MONTH' not found
-# solution: illegal variable names in dataframe.  use make.names into legal names.
 
-rf_model
-nyc_property.test
-colSums(is.na(nyc_property.test))
+rf_model <- randomForest(`SALE.PRICE` ~ . - `NEIGHBORHOOD` - `BUILDING.CLASS.AT.PRESENT` - `ZIP.CODE` - `COMMERCIAL.UNITS`
+                          - `BUILDING.CLASS.AT.TIME.OF.SALE` - `SALE.PRICE`,
+                         data=nyc_property.train_new, 
+                         importance=TRUE, na.action=na.omit)
+
 predictions_rf_model1 <- predict(rf_model, nyc_property.test_new)
-# Warning message:
-# #   'newdata' had 589 rows but variables found have 2354 rows 
-# Solution: it means there are issues matching variable names.  Name is them with ``.
+
 rf_model_1_rmse <-RMSE(predictions_rf_model1, nyc_property.test_new$'SALE.PRICE')
 rf_model_1_rmse
-#[1] 0.1966702
-Sys.time()
 
 rmse_results <- bind_rows(rmse_results,
-                          data_frame(method="RF model 1",
+                          data_frame(method="Random Forest model",
                                      RMSE = rf_model_1_rmse ))
 rmse_results %>% knitr::kable()
 
+rm(rf_model, predictions_rf_model1, rf_model_1_rmse)
+rm(nyc_property.train_new, nyc_property.test_new)
+
 #ridge regression
-
-#ridge needs the data in a matrix
-# x=model.matrix(nyc_property.train$'SALE PRICE' ~ . - `SALE PRICE`,data=nyc_property.train) 
-# x_test=model.matrix(nyc_property.test$'SALE PRICE' ~ . - `SALE PRICE`,data=nyc_property.test) 
-# dim(nyc_property.train)
-# dim(nyc_property.test)
-
+#ridge regession needs the data in a matrix
 x=model.matrix(nyc_property$'SALE PRICE' ~ . - `SALE PRICE`,data=nyc_property) 
 y=nyc_property$'SALE PRICE'
 set.seed(23)
@@ -582,17 +420,15 @@ predictions_ridge_model <- predict(ridge, mtx_test_x)
 
 ridge_model_1_rmse <-RMSE(predictions_ridge_model, mtx_test_y)
 ridge_model_1_rmse
-#[1] 0.3714356
 
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method="GLM with Ridge Regression model",  
                                      RMSE = ridge_model_1_rmse ))
 rmse_results %>% knitr::kable()
 
-
+rm(ridge, predictions_ridge_model, ridge_model_1_rmse, cv.ridge)
 
 #lasso
-
 lasso <- glmnet(mtx_train_x,mtx_train_y,alpha=1)
 plot(lasso,xvar="lambda",label=TRUE)
 
@@ -603,7 +439,6 @@ plot(cv.lasso)
 predictions_lasso_model <- predict(lasso, mtx_test_x)
 lasso_model_1_rmse <-RMSE(predictions_lasso_model, mtx_test_y)
 lasso_model_1_rmse
-#[1] 0.2651776
 
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method="GLM with LASSO Regression model",  
@@ -612,14 +447,10 @@ rmse_results %>% knitr::kable()
 
 lam.best=lasso$lambda[order(lasso_model_1_rmse)[1]]
 lam.best
-#[1] 0.2923926
-coef(lasso,s=lam.best)
 
-
-
+rm(lasso, predictions_lasso_model, lasso_model_1_rmse, lam.best, cv.lasso)
 
 #elastic net
-
 elnet <- glmnet(mtx_train_x,mtx_train_y,alpha=0.5)
 plot(elnet,xvar="lambda",label=TRUE)
 
@@ -629,16 +460,14 @@ plot(cv.elnet)
 predictions_elnet_model <- predict(elnet, mtx_test_x)
 elnet_model_1_rmse <-RMSE(predictions_elnet_model, mtx_test_y)
 elnet_model_1_rmse
-#[1] 0.2727173
 
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method="GLM with Elastic Net Regression model",  
                                      RMSE = elnet_model_1_rmse ))
 rmse_results %>% knitr::kable()
 
-lam.best=lasso$lambda[order(lasso_model_1_rmse)[1]]
+lam.best=elnet$lambda[order(elnet_model_1_rmse)[1]]
 lam.best
-#[1] 0.2923926
-coef(lasso,s=lam.best)
 
-
+rm(elnet, predictions_elnet_model, elnet_model_1_rmse, lam.best, cv.elnet)
+rm(mtx_train_x, mtx_train_y, mtx_test_x, mtx_test_y, x, y)
